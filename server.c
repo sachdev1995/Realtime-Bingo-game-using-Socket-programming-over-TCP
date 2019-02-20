@@ -12,6 +12,7 @@
 #define SA struct sockaddr 
 int port = 8080;
 int counter =0;
+int dummy= 1;
 
 int sockfd;
 struct sockaddr_in servaddr, cli;   
@@ -19,6 +20,7 @@ int client_count =0;
   
 struct client 
 {
+
 	int port;
 	char client_name[20];
 	char incoming_msg[MAX];
