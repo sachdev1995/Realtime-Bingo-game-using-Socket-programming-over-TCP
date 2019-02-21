@@ -124,7 +124,9 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
     //currentPointer->ClientAcceptConservaddr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
     currentPointer->ClientAcceptConservaddr.sin_port = htons(currentPointer->port);
     printf("port number to be connected is %d\n",currentPointer->port);
-    printf("port number to be connected is %s\n",currentPointer->ip_addr);
+    printf("ip addr to be connected is %s\n",currentPointer->ip_addr);
+    printf("client name to be connected is %s\n",currentPointer->client_name);
+
   
     // connect the client socket to server socket 
     if (connect(currentPointer->ClientAcceptConserverSockfd, (SA*)&currentPointer->ClientAcceptConservaddr, sizeof(currentPointer->ClientAcceptConservaddr)) != 0) { 
@@ -219,7 +221,9 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
             bzero(buff, sizeof(buff));
             //sprintf("")
             sprintf(buff,"close");
-            continue   ;
+            write(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff));
+            close(currentPointer->ClientAcceptConserverSockfd); //currently here
+            break   ;
         }
         /*
 
@@ -792,7 +796,9 @@ void ServerConnectionFunc (void)
                 read(serverSockfd, buff, sizeof(buff));
                 if ((strncmp(buff, "registered", 9)) == 0) 
                 { 
-                    printf("Client successfully registered\n"); 
+                    printf("Client successfully registered\n");
+                    pthread_t ClientCreateConTID;
+                    pthread_create(&ClientCreateConTID,NULL, ClientCreateConnectFunc,NULL);  //currently here
                 }
                 else
                 {
@@ -804,7 +810,7 @@ void ServerConnectionFunc (void)
                 continue;
             
         }
-        if ((strncmp(userinput, "query players", 12)) == 0)
+        else if ((strncmp(userinput, "query players", 12)) == 0)
         {
                 bzero(buff, sizeof(buff)); 
                 bzero(userinput,sizeof(userinput));
@@ -847,7 +853,7 @@ void ServerConnectionFunc (void)
 
                 continue;
         }
-        if ((strncmp(userinput, "deregister", 9)) == 0)
+        else if ((strncmp(userinput, "deregister", 9)) == 0)
         {
                 bzero(userinput,sizeof(userinput));
                 char localname[10];
@@ -872,7 +878,62 @@ void ServerConnectionFunc (void)
                 }
 
         }
+        else if ((strncmp(userinput, "start game", 9)) == 0)
+        {
+            int local_player_count;
+            sscanf(userinput,"start game %d",&local_player_count);
+            bzero(userinput,sizeof(userinput));
+            bzero(buff, sizeof(buff));
+            sprintf(buff,"start_game count=%d\n",local_player_count);
+            write(serverSockfd, buff, sizeof(buff));
+            sleep(3);
+            bzero(buff, sizeof(buff));
+            read(serverSockfd, buff, sizeof(buff));
+            if (strncmp("connect", buff, 6) == 0) // TO DO receive port number from server here for client as a client which initiates a new game
+            { 
+                    printf("sending connect command\n");
 
+                    int number_players;
+            
+
+                    sscanf(buff,"connect player=%d",&number_players);
+                    printf("%d\n",number_players);
+                    //int portArray[number_players-1];
+                    char portStr[] = "port=";
+                    char *temp;
+                    temp = strstr(buff,portStr);
+                    for(int i =0;i<number_players;i++)
+                    {
+                        int num;
+                        char localip_addr[6];
+                        printf("%s\n",temp);
+                        sscanf(temp,"port=%d ip_addr=%s",&num,&localip_addr);
+                        printf("port number to be connected is %d and ipaddress is %s \n",num,localip_addr);
+                        accepterThreadStruct[accepterCount] = malloc(sizeof(struct ClientStruct));
+                        accepterThreadStruct[accepterCount]->port = num;
+                        sprintf(accepterThreadStruct[accepterCount]->ip_addr,"%s",localip_addr);
+                        pthread_create(&accepterThreadStruct[accepterCount]->tid,NULL,ClientAcceptConFunc,accepterThreadStruct[accepterCount]);
+                        accepterCount++;
+                        temp++;
+                        temp = strstr(temp,portStr);
+
+                    }
+                    
+                     
+            }
+            else
+            {
+                printf("insufficient players\n");
+                continue;
+            }
+
+
+        }
+        else
+        {
+            printf("invalid command\n");
+            continue;
+        }
             
         //write(serverSockfd, buff, sizeof(buff)); 
         if ((strncmp(buff, "exit", 4)) == 0) { 
@@ -905,12 +966,15 @@ void ServerConnectionFunc (void)
             for(int i =0;i<number_players;i++)
             {
                 int num;
-                char localip_addr[6];
+                char localip_addr[10];
+                char localname[10];
                 printf("%s\n",temp);
-                sscanf(temp,"port=%d ip_addr=%s",&num,&localip_addr);
+                sscanf(temp,"port=%d ip_addr=%s name=%s",&num,&localip_addr,&localname);
                 printf("port number to be connected is %d and ipaddress is %s \n",num,localip_addr);
                 accepterThreadStruct[accepterCount] = malloc(sizeof(struct ClientStruct));
                 accepterThreadStruct[accepterCount]->port = num;
+                strcpy(accepterThreadStruct[accepterCount]->ip_addr,localip_addr);
+                strcpy(accepterThreadStruct[accepterCount]->client_name,localname);
                 sprintf(accepterThreadStruct[accepterCount]->ip_addr,"%s",localip_addr);
                 pthread_create(&accepterThreadStruct[accepterCount]->tid,NULL,ClientAcceptConFunc,accepterThreadStruct[accepterCount]);
                 accepterCount++;
@@ -918,21 +982,7 @@ void ServerConnectionFunc (void)
                 temp = strstr(temp,portStr);
 
             }
-            /*
-            //int connectionCount = 1;
-            int localCount = 0;
-            while(localCount < number_players)
-            {
-                accepterThreadStruct[accepterCount] = malloc(sizeof(struct ClientStruct));
-                pthread_create(&accepterThreadStruct[accepterCount]->tid,NULL,ClientAcceptConFunc,NULL);
-                localCount++;
-                accepterCount++;
-            }*/
-
-            //pthread_t CLientAcceptConTID;
-
-            //pthread_create(&CLientAcceptConTID,NULL,ClientAcceptConFunc,NULL); 
-            //break; 
+            
              
         }
         /*

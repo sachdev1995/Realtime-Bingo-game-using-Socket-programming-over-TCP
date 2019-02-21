@@ -103,20 +103,47 @@ void func(struct client *currentPointer)
 
             int local_player_count;
             sscanf(buff,"start_game count=%d",&local_player_count);
-            printf("%d\n",local_player_count );
-            bzero(buff, sizeof(buff));
-            sprintf(buff,"connect player=%d ",local_player_count);
-
-            for(int i = 0; i< local_player_count;i++)
+            printf("%d and counter %d\n",local_player_count,counter );
+            if(((counter - local_player_count) >=1 ) )
             {
-                char append[30];
-                sprintf(append,"port=%d ip_addr=%s ",a[i]->port,a[i]->ip_addr);
-                strcat(buff,append);
-            }
+                int local_count =0 ;
+                for(int i = 0; i< counter;i++)
+                {
+                    if((a[i]->isValid == 1) && (strcmp(a[i]->client_name,currentPointer->client_name) != 0) )
+                    {
+                        if(local_count<local_player_count)
 
-            printf("Sending connect command '%s' to %s...\n",buff,currentPointer->client_name);
-            //bzero(buff, MAX);
-            //sprintf(buff,"connect player=2 port=8081 port=8082\n");
+                        {
+                            local_count++;
+                        }
+
+                    }
+                }
+                bzero(buff, sizeof(buff));
+                sprintf(buff,"connect player=%d ",local_count);
+
+                for(int i = 0; i< counter;i++)
+                {
+                    if((a[i]->isValid == 1) && (strcmp(a[i]->client_name,currentPointer->client_name) != 0) )
+                    {
+                        char append[30];
+                        sprintf(append,"port=%d ip_addr=%s name=%s ",a[i]->port,a[i]->ip_addr,a[i]->client_name);
+                        strcat(buff,append);
+                    }
+                }
+
+                printf("Sending connect command '%s' to %s...\n",buff,currentPointer->client_name);
+                
+            }
+            else
+            {
+                bzero(buff, sizeof(buff));
+                strcpy(buff,"insufficient players");
+                printf("number of players are not sufficient\n");
+                    
+                //bzero(buff, MAX);
+                //sprintf(buff,"connect player=2 port=8081 port=8082\n");
+            }
             
 
             
