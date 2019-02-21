@@ -7,12 +7,13 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <unistd.h>
-#define MAX 80 
+#define MAX 500 
 //#define PORT 8080 
 #define SA struct sockaddr 
-int port = 8080;
-int counter =0;
 
+int MYPORT ;
+char my_ip_addr[10];
+int counter =0;
 
 int sockfd;
 struct sockaddr_in servaddr, cli;   
@@ -20,8 +21,8 @@ int client_count =0;
   
 struct client 
 {
-
 	int port;
+    char ip_addr[10];
 	char client_name[20];
 	char incoming_msg[MAX];
 	char outgoing_msg[MAX];
@@ -30,6 +31,8 @@ struct client
     struct sockaddr_in servaddr, cli; 
 	pthread_mutex_t lock;
     pthread_attr_t attr;
+    int isValid;
+    int isInvolved;
 	
 }client_struct_variable;
 
@@ -76,9 +79,9 @@ void func(struct client *currentPointer)
 
         
     //a[counter]->port = 8080;
-    strcpy(a[counter]->client_name,"Client");
-    sprintf(append,"%d",counter);
-    strcat(a[counter]->client_name,append);
+    //strcpy(a[counter]->client_name,"Client");
+    //sprintf(append,"%d",counter);
+    //strcat(a[counter]->client_name,append);
 
     
     pthread_create(&a[counter]->tid,&a[counter]->attr,tFunc,a[counter]);
@@ -106,8 +109,8 @@ void func(struct client *currentPointer)
 
             for(int i = 0; i< local_player_count;i++)
             {
-                char append[15];
-                sprintf(append,"port=%d ",a[i]->port);
+                char append[30];
+                sprintf(append,"port=%d ip_addr=%s ",a[i]->port,a[i]->ip_addr);
                 strcat(buff,append);
             }
 
@@ -118,15 +121,76 @@ void func(struct client *currentPointer)
 
             
         }
+        else if((strncmp(buff,"query_players",12))==0)
+        {
+            bzero(buff, sizeof(buff));
+            int local_player_count = 0;
+            for (int i =0 ;i< counter;i++)
+            {
+                if(a[i]->isValid ==1)
+                    local_player_count++;
+
+            }
+            sprintf(buff,"players=%d ",local_player_count);
+            for(int i = 0; i< counter;i++)
+            {
+                if(a[i]->isValid ==1){
+                char append[90];
+                sprintf(append,"port=%d ip_addr=%s name=%s ",a[i]->port,a[i]->ip_addr,a[i]->client_name);
+                strcat(buff,append);
+                //printf("valid pin of name %s  i =%d and pin = %d\n",a[i]->client_name,i,a[i]->isValid);
+                }
+            }
+            printf("sending player list %s\n",buff);
+
+        }
         else if ((strncmp(buff, "my_port", 6)) == 0) 
         { 
-            sscanf(buff,"my_port=%d",&currentPointer->port);
-            printf("Client's port number is  %d...\n",currentPointer->port);
+            int local_port_numer;
+            char local_client_name[10];
+            char local_client_ip[10];
+            sscanf(buff,"my_port=%d my_ipaddr=%s my_name=%s",&local_port_numer,&local_client_ip,&local_client_name);
+            for(int i = 0;i<counter;i++)
+            {
+                if(a[i]->isValid == 1){
+                if(strncmp(a[i]->client_name,local_client_name,10) == 0)
+                {
+                    printf("client name is not unique\n");
+                    bzero(buff, MAX);
+                    sprintf(buff,"not registered");
+                    write(currentPointer->connfd, buff, sizeof(buff));
+                    currentPointer->isValid = 0;
+
+                    
+                    
+                    pthread_exit(NULL);
+                }}
+            }
+            currentPointer->isValid = 1;
+            currentPointer->port = local_port_numer;
+            strcpy(currentPointer->ip_addr,local_client_ip);
+            strcpy(currentPointer->client_name,local_client_name);
+            //sscanf(buff,"my_port=%d my_ipaddr=%s my_name=%s",&currentPointer->port,&currentPointer->ip_addr,&currentPointer->client_name);
+            printf("Client's port number is  %d ,ip address is %s and name is %s...\n",currentPointer->port,currentPointer->ip_addr,currentPointer->client_name);
             bzero(buff, MAX);
-            sprintf(buff,"port number registered\n");
+            sprintf(buff,"registered");
             
 
             
+        }
+        else if((strncmp(buff,"deregister",9))==0)
+        {
+            if(currentPointer->isInvolved == 1)
+            {
+                bzero(buff, MAX);
+                sprintf(buff,"fail"); 
+            }
+            else 
+            {
+                bzero(buff, MAX);
+                sprintf(buff,"sucess");
+                currentPointer->isValid = 0;
+            }
         }
         else
         {
@@ -196,6 +260,13 @@ void query_players()
 
 void main()
 {
+    //printf(" enter ipaddress of this machine\n");
+    //scanf("%s",&my_ip_addr);
+    //printf("enter port number of this machine\n");
+    //scanf("%d",&MYPORT);
+    MYPORT = 8080;
+    strcpy(my_ip_addr,"127.0.0.1");
+
     printf("counter value =%d\n",counter);
 	printf("in main function\n");
     sockfd = socket(AF_INET, SOCK_STREAM, 0); 
@@ -210,12 +281,12 @@ void main()
     
     
     servaddr.sin_family = AF_INET; 
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-    servaddr.sin_port = htons(port); 
+    servaddr.sin_addr.s_addr = inet_addr(my_ip_addr); 
+    servaddr.sin_port = htons(MYPORT); 
   
     if ((bind(sockfd, (SA*)&servaddr, sizeof(servaddr))) != 0) 
     { 
-        printf("socket bind failed  ...\n"); 
+        printf("socket bind failed as server port is not free, please try again after sometime  ...\n"); 
         pthread_exit(NULL);  
         //return;
     } 
