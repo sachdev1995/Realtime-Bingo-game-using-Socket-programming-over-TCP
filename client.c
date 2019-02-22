@@ -13,16 +13,21 @@
 #define SA struct sockaddr
 
 int ServerPORT ;
-int Server_ip_addr[10];
+int Server_ip_addr[20];
+
+int serverSockfd, serverConnfd; 
+struct sockaddr_in servaddr, cli;
 
 int cardNumber =0; 
 int MYPORT;
-char my_ip_addr[10];
+char my_ip_addr[20];
 char my_name[10];
+int current_game_id;
+int isCurrentWinnerFound = 0;
 struct ClientStruct 
 {
     int port;
-    char ip_addr[10];
+    char ip_addr[20];
     int ClientAcceptConserverSockfd;
     int ClientAcceptConserverConnfd;
 
@@ -37,6 +42,7 @@ struct ClientStruct
 
     char client_name[20];
     int bingoCard[25];
+    int game_id;
     
 
 
@@ -145,9 +151,10 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
     for (;;) 
     { 
         //bzero(buff, sizeof(buff)); 
-        printf("sending %s command to client \n ",buff); 
+        //printf("sending %s command to client \n ",buff); 
         n = 0; 
         //while ((buff[n++] = getchar()) != '\n') ;
+
              
         write(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff)); 
         if ((strncmp(buff, "exit", 4)) == 0) { 
@@ -155,7 +162,7 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
             break; }
         bzero(buff, sizeof(buff)); 
         read(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff)); 
-        printf("Command recieved is  : %s\n", buff); 
+        //printf("Command recieved is  : %s\n", buff); 
         if ((strncmp(buff, "get_card", 8)) == 0) { 
             bzero(buff, sizeof(buff));
             strcat(buff,"bingo_card ");
@@ -194,14 +201,25 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
         }*/
         if ((strncmp(buff, "get_number", 10)) == 0) { 
             
+            sleep(2);
+            if( isCurrentWinnerFound == 0)
+            {
             bzero(buff, sizeof(buff));
             int upper = 100, lower = 1;
             int num = (rand() % (upper - lower + 1)) + lower;
-            printf("Number requested,Sending number %d \n ",num);
+            printf("Number requested,Sending number %d \n ",num);//currently here
             sprintf(buff,"New_number_is %d",num);
             cardNumber++;
             //if(cardNumber>24) exit(0);
-                
+            }
+            else
+            {
+                bzero(buff, sizeof(buff));
+                sprintf(buff,"close");
+                write(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff));
+                close(currentPointer->ClientAcceptConserverSockfd);
+
+            }    
             continue;
         }
         /*
@@ -217,13 +235,19 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
         }*/
         if ((strncmp(buff, "I_am_winner", 10)) == 0)
         {
-            printf("winner found for the game hence closing thread");
+            //printf("winner found for the game hence closing thread");
             bzero(buff, sizeof(buff));
+            isCurrentWinnerFound = 1;
             //sprintf("")
             sprintf(buff,"close");
             write(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff));
-            close(currentPointer->ClientAcceptConserverSockfd); //currently here
-            break   ;
+            close(currentPointer->ClientAcceptConserverSockfd);
+            bzero(buff, sizeof(buff)); 
+            sprintf(buff,"end_game=%d",current_game_id); //currently here
+
+            write(serverSockfd, buff, sizeof(buff)); //currently here
+            pthread_exit(NULL);
+            return   ;
         }
         /*
 
@@ -678,8 +702,7 @@ void *deleteFunc(void)
 void ServerConnectionFunc (void)
 {
     
-    int serverSockfd, serverConnfd; 
-    struct sockaddr_in servaddr, cli; 
+     
     /*
     // socket create and varification 
     serverSockfd = socket(AF_INET, SOCK_STREAM, 0); 
@@ -733,7 +756,7 @@ void ServerConnectionFunc (void)
         if ((strncmp(userinput, "register", 7)) == 0) 
         { 
             char localname[10];
-            char localip_addr[10];
+            char localip_addr[20];
             int localport_number;
              sscanf(userinput,"register %s %s %d",&localname,&localip_addr,&localport_number);
              printf("entered data is name=%s, ip_addres=%s and port=%d\n",localname,localip_addr,localport_number);
@@ -834,7 +857,7 @@ void ServerConnectionFunc (void)
                     for(int i =0;i<local_player_count;i++)
                     {
                         int num;
-                        char localip_addr[10];
+                        char localip_addr[20];
                         char localname[10];
                         ///printf("%s\n",temp);
                         sscanf(temp,"port=%d ip_addr=%s name=%s ",&num,&localip_addr,&localname);
@@ -851,6 +874,25 @@ void ServerConnectionFunc (void)
                 else
                     printf("querying players did not recive suitable data\n"); //currently here
 
+                continue;
+        }
+        else if ((strncmp(userinput, "query games", 11)) == 0)
+        {
+                bzero(buff, sizeof(buff)); 
+                bzero(userinput,sizeof(userinput));
+                strcpy(buff,"query_games");
+
+                write(serverSockfd, buff, sizeof(buff));
+                sleep(1);
+                bzero(buff, sizeof(buff)); 
+                read(serverSockfd, buff, sizeof(buff));
+                if ((strncmp(buff, "game_id", 7)) == 0)
+                {
+
+                    printf("%s\n",buff);
+                }
+                else
+                    printf("Either currupt data recieved or number of games is 0\n");
                 continue;
         }
         else if ((strncmp(userinput, "deregister", 9)) == 0)
@@ -896,7 +938,7 @@ void ServerConnectionFunc (void)
                     int number_players;
             
 
-                    sscanf(buff,"connect player=%d",&number_players);
+                    sscanf(buff,"connect game_id=%d player=%d",&current_game_id,&number_players);
                     printf("%d\n",number_players);
                     //int portArray[number_players-1];
                     char portStr[] = "port=";
@@ -911,6 +953,7 @@ void ServerConnectionFunc (void)
                         printf("port number to be connected is %d and ipaddress is %s \n",num,localip_addr);
                         accepterThreadStruct[accepterCount] = malloc(sizeof(struct ClientStruct));
                         accepterThreadStruct[accepterCount]->port = num;
+                        accepterThreadStruct[accepterCount]->game_id = current_game_id;
                         sprintf(accepterThreadStruct[accepterCount]->ip_addr,"%s",localip_addr);
                         pthread_create(&accepterThreadStruct[accepterCount]->tid,NULL,ClientAcceptConFunc,accepterThreadStruct[accepterCount]);
                         accepterCount++;
@@ -918,6 +961,7 @@ void ServerConnectionFunc (void)
                         temp = strstr(temp,portStr);
 
                     }
+                    continue;
                     
                      
             }
@@ -966,7 +1010,7 @@ void ServerConnectionFunc (void)
             for(int i =0;i<number_players;i++)
             {
                 int num;
-                char localip_addr[10];
+                char localip_addr[20];
                 char localname[10];
                 printf("%s\n",temp);
                 sscanf(temp,"port=%d ip_addr=%s name=%s",&num,&localip_addr,&localname);

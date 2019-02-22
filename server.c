@@ -12,7 +12,7 @@
 #define SA struct sockaddr 
 
 int MYPORT ;
-char my_ip_addr[10];
+char my_ip_addr[20];
 int counter =0;
 
 int sockfd;
@@ -22,7 +22,7 @@ int client_count =0;
 struct client 
 {
 	int port;
-    char ip_addr[10];
+    char ip_addr[20];
 	char client_name[20];
 	char incoming_msg[MAX];
 	char outgoing_msg[MAX];
@@ -37,6 +37,81 @@ struct client
 }client_struct_variable;
 
 struct client *a[10];
+
+struct game_Structure
+{
+    int game_id;
+    char game_members[MAX];
+    int isOnGoing;
+    int player_count;
+}game_struct_variable;
+
+int game_counter = 0;
+
+struct game_Structure *game[10];
+
+void check_for_isInvolved(int current_game_id)
+{
+    printf("**********check_for_isInvolved\n");
+    int local_game_player_count = game[current_game_id]->player_count;
+    char *current_player_list;
+    current_player_list = malloc(sizeof(game[current_game_id]->game_members));
+    memcpy(current_player_list,game[current_game_id]->game_members,strlen(game[current_game_id]->game_members)+1);
+    printf("%s\n",current_player_list);
+    char portStr[] = "port=";
+    current_player_list = strstr(current_player_list,portStr);
+     
+    for(int i = 0; i<local_game_player_count;i++)
+    {
+        int num;
+        char localip_addr[20];
+        char localname[10];
+        ///printf("%s\n",temp);
+        sscanf(current_player_list,"port=%d ip_addr=%s name=%s ",&num,&localip_addr,&localname);
+        int flag = 0;
+        printf("for player %s\n",localname);
+        
+        for(int j = 0 ;j< game_counter;j++)
+        {
+            if((game[j]->isOnGoing == 1) && j != current_game_id)
+            {
+                if(strstr(game[j]->game_members, localname) != NULL)
+                {
+                    printf("%s is there in game id %d list %s \n ",localname,game[j]->game_id,game[j]->game_members);
+                    flag = 1;
+
+                }
+            }
+             
+        }
+
+        if(flag == 0)
+        {
+            printf("find its array\n");
+            for(int k= 0; k< counter;k++)
+            {
+                printf("comparing %s with %s\n",localname,a[k]->client_name);
+                if(a[k]->isValid == 1)
+                {
+                    if(strstr(a[k]->client_name, localname) != NULL)
+                    {
+                        a[k]->isInvolved = 0;
+                        printf("it worked\n");
+                        
+                    }
+                }
+                
+            }
+        }
+        
+        
+        current_player_list++;
+        current_player_list = strstr(current_player_list,portStr);
+        bzero(localname,sizeof(localname));
+        bzero(localip_addr,sizeof(localip_addr));
+    }
+}
+
 
 void *tFunc(struct client *currentPointer)
 {
@@ -99,15 +174,18 @@ void func(struct client *currentPointer)
         }
         else if ((strncmp(buff, "start_game", 4)) == 0) 
         { 
-                
+            
+            game[game_counter] = malloc(sizeof(struct game_Structure));
+            game[game_counter]->game_id = game_counter;
+            game[game_counter]->isOnGoing = 1;
 
             int local_player_count;
             sscanf(buff,"start_game count=%d",&local_player_count);
-            printf("%d and counter %d\n",local_player_count,counter );
+            printf("%d and counter %d and game counter %d\n",local_player_count,counter,game_counter );
             if(((counter - local_player_count) >=1 ) )
             {
                 int local_count =0 ;
-                for(int i = 0; i< counter;i++)
+                for(int i = 0; i< counter; i++)
                 {
                     if((a[i]->isValid == 1) && (strcmp(a[i]->client_name,currentPointer->client_name) != 0) )
                     {
@@ -119,20 +197,31 @@ void func(struct client *currentPointer)
 
                     }
                 }
+                game[game_counter]->player_count = local_count;
                 bzero(buff, sizeof(buff));
-                sprintf(buff,"connect player=%d ",local_count);
+                sprintf(buff,"connect game_id=%d player=%d ",game_counter,local_count);
+                char game_info_string[MAX];
+                //bzero(game_info_string, sizeof(game_info_string));
 
                 for(int i = 0; i< counter;i++)
                 {
                     if((a[i]->isValid == 1) && (strcmp(a[i]->client_name,currentPointer->client_name) != 0) )
                     {
-                        char append[30];
+                        char append[90];
+                        
                         sprintf(append,"port=%d ip_addr=%s name=%s ",a[i]->port,a[i]->ip_addr,a[i]->client_name);
+                        
                         strcat(buff,append);
+                        
+                        a[i]->isInvolved = 1;
                     }
                 }
+                //strcpy(game[game_counter]->game_members,buff);
 
+                sprintf(game[game_counter]->game_members,"caller_name=%s player_list: %s",currentPointer->client_name,buff+17);
+                printf("game info buff %s and actual data\n",buff,game[game_counter]->game_members);
                 printf("Sending connect command '%s' to %s...\n",buff,currentPointer->client_name);
+                game_counter++;
                 
             }
             else
@@ -140,7 +229,7 @@ void func(struct client *currentPointer)
                 bzero(buff, sizeof(buff));
                 strcpy(buff,"insufficient players");
                 printf("number of players are not sufficient\n");
-                    
+
                 //bzero(buff, MAX);
                 //sprintf(buff,"connect player=2 port=8081 port=8082\n");
             }
@@ -175,7 +264,7 @@ void func(struct client *currentPointer)
         { 
             int local_port_numer;
             char local_client_name[10];
-            char local_client_ip[10];
+            char local_client_ip[20];
             sscanf(buff,"my_port=%d my_ipaddr=%s my_name=%s",&local_port_numer,&local_client_ip,&local_client_name);
             for(int i = 0;i<counter;i++)
             {
@@ -218,6 +307,34 @@ void func(struct client *currentPointer)
                 sprintf(buff,"sucess");
                 currentPointer->isValid = 0;
             }
+        }
+        else if((strncmp(buff,"query_games",11))==0)
+        {
+            bzero(buff, MAX);
+            for(int i =0; i<game_counter;i++)
+            {
+                if(game[i]->isOnGoing == 1)
+                {
+                    char append[40];
+
+                    sprintf(append,"game_id=%d ",game[i]->game_id);
+                    strcat(buff,append);
+                    strcat(buff,game[i]->game_members);
+                    strcat(buff,"\n");
+
+                }
+            }
+            printf("query games output %s\n",buff);
+        }
+        else if((strncmp(buff,"end_game",8))==0)
+        {
+            int local_game_id;
+            sscanf(buff,"end_game=%d",&local_game_id);
+            game[local_game_id]->isOnGoing =0;
+            check_for_isInvolved(local_game_id);
+            bzero(buff, MAX);
+            continue;
+            //snprintf("game %d ended",local_game_id);
         }
         else
         {
@@ -275,15 +392,7 @@ int create_thread(int fcount)
 
 }
 
-void query_players()
-{
-    int i = 0;
-    while(a[i+1]!= NULL)
-    {
-        printf("%s is connected to port %d\n",a[i]->client_name,a[i]->port);
-        i++;
-    }
-}
+
 
 void main()
 {
@@ -344,7 +453,7 @@ void main()
     
     sleep(20);
     
-    query_players();
+    //query_players();
     pthread_exit(NULL);
 
 }
