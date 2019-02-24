@@ -7,9 +7,8 @@
 #include <pthread.h>
 #include <unistd.h>
 #include<time.h> 
+#include<stdbool.h>
 #define MAX 500 
-//#define ServerPORT 8080 
-//#define MYPORT 8083
 #define SA struct sockaddr
 
 int ServerPORT ;
@@ -24,57 +23,104 @@ char my_ip_addr[20];
 char my_name[10];
 int current_game_id;
 int isCurrentWinnerFound = 0;
+int isSelfCaller = 0;
+pthread_mutex_t lock;
+
+int isPlayerRegistered = 0;
+
+/*
+Below is the structure to be used by all the clients
+*/
+
 struct ClientStruct 
 {
     int port;
     char ip_addr[20];
     int ClientAcceptConserverSockfd;
     int ClientAcceptConserverConnfd;
-
     int len;
     struct sockaddr_in ClientAcceptConservaddr, ClientAcceptConcli;
     pthread_t tid;
-
-
     int ClientCreateConSockfd, ClientCreateConConnfd, ClientCreateConlen; 
     struct sockaddr_in ClientCreateConservaddr, ClientCreateConcli; 
-    
-
     char client_name[20];
     int bingoCard[25];
     int game_id;
-    
-
-
+    int self_count ;
+    int test_number;
 }someVariable;
 
 int createrCount = 0;
-struct ClientStruct *createrThreadStruct[10];
+struct ClientStruct *createrThreadStruct[20];
 
 int accepterCount =0;
+struct ClientStruct *accepterThreadStruct[20];
 
-struct ClientStruct *accepterThreadStruct[0];
+/*
+Below function creates the bingo card 
+as per the requirement.
+For 'free' data in the card, I have used
+the value as 100
+*/
 
-
-
-//int bingoCard[25];
-
-void generateBingoCard(int arr[])
+void generateBingoCard  (int array[])
 {
-    //printf("inside generate function\n");
-    int upper  = 50, lower = 1;
-    srand(1);
-    for(int i = 0;i< 25;i++)
-    {
-        int num = (rand() % (upper - lower + 1)) + lower;
 
-        arr[i] = num;
-        printf("current random number is %d \n",arr[i]);
+    printf("new card generated is \n");
+
+    int tempBingoCard[5][5];
+    
+    int k = 0;
+
+
+
+    int row, col, value, i;
+    bool check[76];    
+    for(i = 0; i < 76; ++i)  
+        check[i] = false;
+    
+    bool test; 
+
+    for(col = 0; col < 5; ++ col) 
+    {
+        for(row = 0; row < 5; ++ row)
+        {
+            if(row == 2 && col == 2)
+            {
+                tempBingoCard[row][col] = 100; 
+                continue;   
+            }
+            test = true;
+            do
+            {
+                value = rand()%15 + 1;
+                value = value + (col*15);
+                if(check[value] == false) 
+                {
+                    tempBingoCard[row][col] = value;
+                    check[value] = true;
+                    test = false;
+                }
+
+            }while(test == true);
+        }
     }
+
+    for(int i=0; i< 5;i++)
+    {
+        for (int j = 0;j<5; j++)
+        {
+            printf("%d ",tempBingoCard[i][j]);
+            array[k++] = tempBingoCard[i][j];
+        }
+        printf("\n");
+    }
+    
+
+
 }
 
-
-
+/*
 void func(int sockfd) 
 { 
     char buff[MAX]; 
@@ -105,112 +151,102 @@ void func(int sockfd)
         }
     } 
 } 
-  
+
+*/  
+
+/*
+Below is Thread function used in P2P mode
+The function parameter is the client structure
+which is created by caller player
+for individual other players
+*/
 
 void ClientAcceptConFunc(struct ClientStruct *currentPointer)
 
-{
-
-    //int ClientAcceptConserverSockfd, ClientAcceptConserverConnfd; 
-    //struct sockaddr_in ClientAcceptConservaddr, ClientAcceptConcli; 
-  
-    // socket create and varification 
+{ 
     currentPointer->ClientAcceptConserverSockfd = socket(AF_INET, SOCK_STREAM, 0); 
-    if (currentPointer->ClientAcceptConserverSockfd == -1) { 
+    if (currentPointer->ClientAcceptConserverSockfd == -1) 
+    { 
         printf("socket creation failed for P2p client...\n"); 
         pthread_exit(NULL); 
-    } 
+    }
+
     else
-        printf("Socket successfully created for P2p client..\n"); 
+        printf("Socket successfully created for P2p client..\n");
+
     bzero(&currentPointer->ClientAcceptConservaddr, sizeof(currentPointer->ClientAcceptConservaddr)); 
-  
-    // assign IP, PORT 
     currentPointer->ClientAcceptConservaddr.sin_family = AF_INET;
     currentPointer->ClientAcceptConservaddr.sin_addr.s_addr = inet_addr(currentPointer->ip_addr); 
-    //currentPointer->ClientAcceptConservaddr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
     currentPointer->ClientAcceptConservaddr.sin_port = htons(currentPointer->port);
-    printf("port number to be connected is %d\n",currentPointer->port);
-    printf("ip addr to be connected is %s\n",currentPointer->ip_addr);
-    printf("client name to be connected is %s\n",currentPointer->client_name);
+    //printf("port number to be connected is %d\n",currentPointer->port);
+    //printf("ip addr to be connected is %s\n",currentPointer->ip_addr);
+    //printf("client name to be connected is %s\n",currentPointer->client_name);
 
-  
-    // connect the client socket to server socket 
-    if (connect(currentPointer->ClientAcceptConserverSockfd, (SA*)&currentPointer->ClientAcceptConservaddr, sizeof(currentPointer->ClientAcceptConservaddr)) != 0) { 
+    if (connect(currentPointer->ClientAcceptConserverSockfd, (SA*)&currentPointer->ClientAcceptConservaddr, sizeof(currentPointer->ClientAcceptConservaddr)) != 0) 
+    { 
         printf("connection with the server failed for P2p client...\n"); 
         pthread_exit(NULL); 
     } 
     else
         printf("connected to the server P2P..\n"); 
-  
-    // function for chat 
-    //func(serverSockfd); 
-
+    
     char buff[MAX]; 
     sprintf(buff,"Initiate"); 
     int n; 
+
+    /*
+    Below the commands which are exchanged 
+    between the caller and other players
+    for eg. when a player asks for bingo card
+    after the game is started, the caller sends 
+    him a unique bingo card.
+    Similarly other commands are also 
+    exchaged
+
+    */
+
     for (;;) 
     { 
-        //bzero(buff, sizeof(buff)); 
-        //printf("sending %s command to client \n ",buff); 
-        n = 0; 
-        //while ((buff[n++] = getchar()) != '\n') ;
-
-             
+        n = 0;    
         write(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff)); 
-        if ((strncmp(buff, "exit", 4)) == 0) { 
+        if ((strncmp(buff, "exit", 4)) == 0) 
+        { 
             printf("Client self Exit P2P...\n"); 
-            break; }
+            break; 
+        }
+
         bzero(buff, sizeof(buff)); 
         read(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff)); 
-        //printf("Command recieved is  : %s\n", buff); 
-        if ((strncmp(buff, "get_card", 8)) == 0) { 
+        
+        if ((strncmp(buff, "get_card", 8)) == 0) 
+        { 
+            isCurrentWinnerFound = 0;
             bzero(buff, sizeof(buff));
             strcat(buff,"bingo_card ");
             strcat(buff,"data ");
             int arr[25];
+            pthread_mutex_lock(&lock);
              generateBingoCard(arr);
-            printf("%s outside for loop\n",buff);
+             pthread_mutex_unlock(&lock);
+            //printf("%s outside for loop\n",buff);
             sprintf(buff,"bingo_card %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ",arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6],arr[7],arr[8],arr[9],arr[10],arr[11],arr[12],arr[13],arr[14],arr[15],arr[16],arr[17],arr[18],arr[19],arr[20],arr[21],arr[22],arr[23],arr[24]);
-            /*
-            for(int i =0 ;i < 25 ;i++)
-            {
-                //printf("%d ",arr[i]);
-                char temp[3];
-                sprintf(temp,"%d ",arr[i]);
-                strcat(buff,temp);
-                printf("%s inside for loop\n");
-            }*/
             printf("Sending over the card...%s\n",buff);
             continue;
-            //write(ClientAcceptConserverSockfd, buff, sizeof(buff));
-            //bzero(buff, sizeof(buff));
-             
             
-        }/*
-        if ((strncmp(buff, "bingo_card", 7)) == 0) { 
-            printf("adding values to the card...\n");
-            sscanf(buff,"bingo_card %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ",&bingoCard[0],&bingoCard[1],&bingoCard[2],&bingoCard[3],&bingoCard[4],&bingoCard[5],&bingoCard[6],&bingoCard[7],&bingoCard[8],&bingoCard[9],&bingoCard[10],&bingoCard[11],&bingoCard[12],&bingoCard[13],&bingoCard[14],&bingoCard[15],&bingoCard[16],&bingoCard[17],&bingoCard[18],&bingoCard[19],&bingoCard[20],&bingoCard[21],&bingoCard[22],&bingoCard[23],&bingoCard[24]); 
-            for (int i = 0 ;i < 25; i++)
-            {
-                printf("%d\n",bingoCard[i] );
-            }
-            bzero(buff, sizeof(buff));
-            sprintf(buff,"get_number");
-            continue;
-            
-        }*/
-        if ((strncmp(buff, "get_number", 10)) == 0) { 
+        }
+
+        if ((strncmp(buff, "get_number", 10)) == 0) 
+        { 
             
             sleep(2);
             if( isCurrentWinnerFound == 0)
             {
-            bzero(buff, sizeof(buff));
-            int upper = 100, lower = 1;
-            int num = (rand() % (upper - lower + 1)) + lower;
-            printf("Number requested,Sending number %d \n ",num);//currently here
-            sprintf(buff,"New_number_is %d",num);
-            cardNumber++;
-            //if(cardNumber>24) exit(0);
+                bzero(buff, sizeof(buff));
+                int upper = 100, lower = 1;
+                int num = (rand() % (upper - lower + 1)) + lower;
+                printf("Number requested,Sending number %d \n ",num);//currently here put num here
+                sprintf(buff,"New_number_is %d",num);
+                cardNumber++;
             }
             else
             {
@@ -223,44 +259,33 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
             continue;
         }
         /*
-        if  (strncmp(buff,"New_number_is",10)== 0) 
-        {
-            printf("Number received is %s\n",buff);
-            //TO DO to check here if i am winner create a function for this and return true or false
-            bzero(buff, sizeof(buff));
-            sprintf(buff,"I_am_winner");
-            continue;
+        when a winner is found in game,
+        that corresponding player informs the caller.
+        Caller now informs the server that
+        the winner for the game is found and
+        the game has ended.
+        The server will then update its database accordingly
 
+        */
 
-        }*/
         if ((strncmp(buff, "I_am_winner", 10)) == 0)
         {
-            //printf("winner found for the game hence closing thread");
+            printf("winner found\n");
             bzero(buff, sizeof(buff));
             isCurrentWinnerFound = 1;
-            //sprintf("")
+            isSelfCaller = 0;
             sprintf(buff,"close");
             write(currentPointer->ClientAcceptConserverSockfd, buff, sizeof(buff));
             close(currentPointer->ClientAcceptConserverSockfd);
             bzero(buff, sizeof(buff)); 
-            sprintf(buff,"end_game=%d",current_game_id); //currently here
+            sprintf(buff,"end_game=%d",current_game_id); 
 
-            write(serverSockfd, buff, sizeof(buff)); //currently here
+            write(serverSockfd, buff, sizeof(buff)); 
             pthread_exit(NULL);
             return   ;
         }
-        /*
-
-        else if (strncmp("close", buff, 4) == 0) 
-        { 
-            printf("All clients closing down since server closed down"); 
-            //break; 
-            pthread_exit(NULL); 
-        }*/
     } 
     
-  
-    // close the socket 
     close(currentPointer->ClientAcceptConserverSockfd);
 
 }
@@ -268,17 +293,19 @@ void ClientAcceptConFunc(struct ClientStruct *currentPointer)
 int ClientCreateConSockfd, ClientCreateConConnfd, ClientCreateConlen; 
 struct sockaddr_in ClientCreateConservaddr, ClientCreateConcli;
 
+/*
+Below is the handler function 
+for inidivial players (not the caller)
 
+*/
 
 void createrHandlerFunction(struct ClientStruct *currentPointer)
 {
-    printf("Inside Handler function\n");
+    //printf("Inside Handler function\n");
     currentPointer->ClientCreateConSockfd = ClientCreateConSockfd;
-
-    currentPointer->ClientCreateConlen = sizeof(currentPointer->ClientCreateConcli); 
-  
-    // Accept the data packet from client and verification 
+    currentPointer->ClientCreateConlen = sizeof(currentPointer->ClientCreateConcli);
     currentPointer->ClientCreateConConnfd = accept(currentPointer->ClientCreateConSockfd, (SA*)&ClientCreateConcli, &currentPointer->ClientCreateConlen); 
+    
     if (currentPointer->ClientCreateConConnfd < 0) { 
         printf("server acccept failed for P2P client Server...\n"); 
         pthread_exit(NULL);
@@ -286,53 +313,39 @@ void createrHandlerFunction(struct ClientStruct *currentPointer)
     else
         printf("server acccept the client for P2P client Server...\n"); 
 
-
-
     createrTransferHandlerFunct(currentPointer);
-
-    // Function for chatting between client and server 
-    //func(ClientCreateConConnfd); 
-
-    
-    // After chatting close the socket 
     close(currentPointer->ClientCreateConConnfd); ///to check if doesnt work put ClientCreateConSockfd
 
 }
 
+/*
+the below function is the extension of the above function
+the below function actually exchanges data between a caller and itself(player)
+*/
+
 void createrTransferHandlerFunct(struct ClientStruct *currentPointer)
 {
+    
     printf("Inside transfer handler function\n");
     char buff[MAX]; 
-    int n; 
-
+    int n;
     createrCount++;
-
     printf("creating a creater thread here %d\n",createrCount);
-
     char append[2];
-
-     createrThreadStruct[createrCount] = malloc(sizeof(struct ClientStruct));
-
-
-
-        
-    //a[counter]->port = 8080;
+    currentPointer->test_number = 36;
+    createrThreadStruct[createrCount] = malloc(sizeof(struct ClientStruct));
     strcpy(createrThreadStruct[createrCount]->client_name,"Client");
     sprintf(append,"%d",createrCount);
     strcat(createrThreadStruct[createrCount]->client_name,append);
 
-    
     pthread_create(&createrThreadStruct[createrCount]->tid,NULL,createrHandlerFunction,createrThreadStruct[createrCount]);
 
-    // infinite loop for chat 
     for (;;) 
     { 
-        bzero(buff, MAX); 
-  
-        // read the message from client and copy it in buffer 
-        read(currentPointer->ClientCreateConConnfd, buff, sizeof(buff)); 
-        // print buffer which contains the client contents 
-        printf("From P2P client: %s\n", buff);
+        bzero(buff, MAX);
+        read(currentPointer->ClientCreateConConnfd, buff, sizeof(buff));
+        //printf("From P2P client: %s\n", buff);
+
         if((strncmp(buff, "Initiate", 7)) == 0)
         {
             printf("Received %s command \n",buff);
@@ -341,69 +354,63 @@ void createrTransferHandlerFunct(struct ClientStruct *currentPointer)
             sprintf(buff,"get_card");
             printf("Sending %s command back\n",buff);
         }
+
         else if ((strncmp(buff, "bingo_card", 7)) == 0) { 
             printf("adding values to the card...\n");
             sscanf(buff,"bingo_card %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ",&currentPointer->bingoCard[0],&currentPointer->bingoCard[1],&currentPointer->bingoCard[2],&currentPointer->bingoCard[3],&currentPointer->bingoCard[4],&currentPointer->bingoCard[5],&currentPointer->bingoCard[6],&currentPointer->bingoCard[7],&currentPointer->bingoCard[8],&currentPointer->bingoCard[9],&currentPointer->bingoCard[10],&currentPointer->bingoCard[11],&currentPointer->bingoCard[12],&currentPointer->bingoCard[13],&currentPointer->bingoCard[14],&currentPointer->bingoCard[15],&currentPointer->bingoCard[16],&currentPointer->bingoCard[17],&currentPointer->bingoCard[18],&currentPointer->bingoCard[19],&currentPointer->bingoCard[20],&currentPointer->bingoCard[21],&currentPointer->bingoCard[22],&currentPointer->bingoCard[23],&currentPointer->bingoCard[24]); 
             for (int i = 0 ;i < 25; i++)
             {
-                printf("%d\n",currentPointer->bingoCard[i] );
+                if(i%5 == 0)
+                    printf("\n");
+                printf("%d ",currentPointer->bingoCard[i] );
             }
+            printf("\n");
             bzero(buff, sizeof(buff));
             sprintf(buff,"get_number");
             
             
-        } /*
-        else if ((strncmp(buff, "get_number", 10)) == 0) { 
-            
-            bzero(buff, sizeof(buff));
-            int upper = 100 ,lower = 1;
-            int num = (rand() % (upper - lower + 1)) + lower;
-            printf("Number requested,Sending number %d \t ",num);
+        }
 
-            sprintf(buff,"New_number_is %d",num);
-            //cardNumber++;
-            //if(cardNumber>24) exit(0);
-            
-            
-        }*/
         else if  (strncmp(buff,"New_number_is",10)== 0)  
         {
+            currentPointer->self_count++;
             printf("Number received is %s\n",buff);
-            //TO DO to check here if i am winner create a function for this and return true or false
             int num;
             sscanf(buff,"New_number_is %d",&num);
             bzero(buff, sizeof(buff));
-            if(num == 36)
+            if((num == currentPointer->test_number))
             {
-            
-            sprintf(buff,"I_am_winner ");
+                if(currentPointer->self_count >15)
+                {
+                sprintf(buff,"I_am_winner ");
+                printf("I am the winner of the game\n");
+                }
+                else
+                {
+                    currentPointer->test_number++;
+                    sprintf(buff,"get_number");
+
+                }
             }
             else
+            {
+                    
                 sprintf(buff,"get_number");
-
+                    
+            }      
 
             
-
-
         }
         else if (strncmp("close", buff, 4) == 0) 
         { 
             printf("All clients closing down since server closed down\n"); 
-            bzero(buff,sizeof(buff)); 
-            //break; 
+            bzero(buff,sizeof(buff));
             pthread_exit(NULL);
         }
-       // bzero(buff, MAX); 
-        n = 0; 
-        // copy server message in the buffer 
-        //char deleteBuff[MAX];
-        //while ((buff[n++] = getchar()) != '\n') ;
-             
-  
-        // and send that buffer to client 
-        write(currentPointer->ClientCreateConConnfd, buff, sizeof(buff)); 
-  
-        // if msg contains "Exit" then server exit and chat ended. 
+
+        n = 0;
+
+        write(currentPointer->ClientCreateConConnfd, buff, sizeof(buff));
         if (strncmp("exit", buff, 4) == 0) { 
             printf("Server Exit...\n"); 
             break; 
@@ -413,13 +420,17 @@ void createrTransferHandlerFunct(struct ClientStruct *currentPointer)
 
 }
 
+/*
+the below is the handler function 
+for a client to behave as server
+i.e it will put the current instance
+of client in listening mode so that
+the other players can connect to it 
+in case a game needs to start
+*/
 
 void ClientCreateConnectFunc (void)
 {
-    //int ClientCreateConSockfd, ClientCreateConConnfd, ClientCreateConlen; 
-    //struct sockaddr_in ClientCreateConservaddr, ClientCreateConcli; 
-  
-    // socket create and verification 
     ClientCreateConSockfd = socket(AF_INET, SOCK_STREAM, 0); 
     if (ClientCreateConSockfd == -1) { 
         printf("socket creation failed for P2P client Server...\n"); 
@@ -427,14 +438,11 @@ void ClientCreateConnectFunc (void)
     } 
     else
         printf("Socket successfully created for P2P client Server..\n"); 
-    bzero(&ClientCreateConservaddr, sizeof(ClientCreateConservaddr)); 
-  
-    // assign IP, PORT 
+    bzero(&ClientCreateConservaddr, sizeof(ClientCreateConservaddr));
     ClientCreateConservaddr.sin_family = AF_INET; 
     ClientCreateConservaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-    ClientCreateConservaddr.sin_port = htons(MYPORT); 
-  
-    // Binding newly created socket to given IP and verification 
+    ClientCreateConservaddr.sin_port = htons(MYPORT);
+
     if ((bind(ClientCreateConSockfd, (SA*)&ClientCreateConservaddr, sizeof(ClientCreateConservaddr))) != 0) { 
         printf("socket bind failed for P2P client Server...\n"); 
         pthread_exit(NULL);
@@ -442,7 +450,6 @@ void ClientCreateConnectFunc (void)
     else
         printf("Socket successfully binded for P2P client Server..\n"); 
   
-    // Now server is ready to listen and verification 
     if ((listen(ClientCreateConSockfd, 5)) != 0) { 
         printf("Listen failed for P2P client Server...\n"); 
         pthread_exit(NULL);
@@ -451,308 +458,44 @@ void ClientCreateConnectFunc (void)
         printf("Server listening for P2P client Server..\n"); 
 
     createrThreadStruct[createrCount] = malloc(sizeof(struct ClientStruct));
-    char append[2]; 
-    //strcpy(createrThreadStruct[createrCount]->client_name,"Client");
+    char append[2];
     sprintf(append,"%d",createrCount);
-    //strcat(createrThreadStruct[createrCount]->client_name,append);
     pthread_create(&createrThreadStruct[createrCount]->tid,NULL,createrHandlerFunction,createrThreadStruct[createrCount]);
-
     pthread_exit(NULL);
 
-/*
-
-    ClientCreateConlen = sizeof(ClientCreateConcli); 
-  
-    // Accept the data packet from client and verification 
-    ClientCreateConConnfd = accept(ClientCreateConSockfd, (SA*)&ClientCreateConcli, &ClientCreateConlen); 
-    if (ClientCreateConConnfd < 0) { 
-        printf("server acccept failed for P2P client Server...\n"); 
-        pthread_exit(NULL);
-    } 
-    else
-        printf("server acccept the client for P2P client Server...\n"); 
-  
-    // Function for chatting between client and server 
-    //func(ClientCreateConConnfd); 
-
-    char buff[MAX]; 
-    int n; 
-    // infinite loop for chat 
-    for (;;) { 
-        bzero(buff, MAX); 
-  
-        // read the message from client and copy it in buffer 
-        read(ClientCreateConConnfd, buff, sizeof(buff)); 
-        // print buffer which contains the client contents 
-        printf("From P2P client: %s\t", buff);
-        if((strncmp(buff, "Initiate", 7)) == 0)
-        {
-            printf("Received %s command \n",buff);
-
-            bzero(buff, MAX);
-            sprintf(buff,"get_card");
-            printf("Sending %s command back\n",buff);
-        }
-        else if ((strncmp(buff, "bingo_card", 7)) == 0) { 
-            printf("adding values to the card...\n");
-            sscanf(buff,"bingo_card %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ",&bingoCard[0],&bingoCard[1],&bingoCard[2],&bingoCard[3],&bingoCard[4],&bingoCard[5],&bingoCard[6],&bingoCard[7],&bingoCard[8],&bingoCard[9],&bingoCard[10],&bingoCard[11],&bingoCard[12],&bingoCard[13],&bingoCard[14],&bingoCard[15],&bingoCard[16],&bingoCard[17],&bingoCard[18],&bingoCard[19],&bingoCard[20],&bingoCard[21],&bingoCard[22],&bingoCard[23],&bingoCard[24]); 
-            for (int i = 0 ;i < 25; i++)
-            {
-                printf("%d\n",bingoCard[i] );
-            }
-            bzero(buff, sizeof(buff));
-            sprintf(buff,"get_number");
-            
-            
-        } 
-        else if ((strncmp(buff, "get_number", 10)) == 0) { 
-            
-            bzero(buff, sizeof(buff));
-            int upper = 100 ,lower = 1;
-            int num = (rand() % (upper - lower + 1)) + lower;
-            printf("Number requested,Sending number %d \n ",num);
-
-            sprintf(buff,"New_number_is %d",num);
-            //cardNumber++;
-            //if(cardNumber>24) exit(0);
-            
-            
-        }
-        else if  (strncmp(buff,"New_number_is",10)== 0)  
-        {
-            printf("Number received is %s\n",buff);
-            //TO DO to check here if i am winner create a function for this and return true or false
-            int num;
-            sscanf(buff,"New_number_is %d",&num);
-            bzero(buff, sizeof(buff));
-            if(num == 36)
-            {
-            
-            sprintf(buff,"I_am_winner ");
-            }
-            else
-                sprintf(buff,"get_number");
-
-
-            
-
-
-        }
-        else if (strncmp("close", buff, 4) == 0) 
-        { 
-            printf("All clients closing down since server closed down\n"); 
-            //break; 
-            pthread_exit(NULL);
-        }
-       // bzero(buff, MAX); 
-        n = 0; 
-        // copy server message in the buffer 
-        //char deleteBuff[MAX];
-        //while ((buff[n++] = getchar()) != '\n') ;
-             
-  
-        // and send that buffer to client 
-        write(ClientCreateConConnfd, buff, sizeof(buff)); 
-  
-        // if msg contains "Exit" then server exit and chat ended. 
-        if (strncmp("exit", buff, 4) == 0) { 
-            printf("Server Exit...\n"); 
-            break; 
-        } 
-    }
-  
-    // After chatting close the socket 
-    close(ClientCreateConSockfd); 
-
-    */
-}
-/*
-
-void ClientCreateConnectFunc (void)
-{
-    int ClientCreateConSockfd, ClientCreateConConnfd, ClientCreateConlen; 
-    struct sockaddr_in ClientCreateConservaddr, ClientCreateConcli; 
-  
-    // socket create and verification 
-    ClientCreateConSockfd = socket(AF_INET, SOCK_STREAM, 0); 
-    if (ClientCreateConSockfd == -1) { 
-        printf("socket creation failed for P2P client Server...\n"); 
-        pthread_exit(NULL);
-    } 
-    else
-        printf("Socket successfully created for P2P client Server..\n"); 
-    bzero(&ClientCreateConservaddr, sizeof(ClientCreateConservaddr)); 
-  
-    // assign IP, PORT 
-    ClientCreateConservaddr.sin_family = AF_INET; 
-    ClientCreateConservaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-    ClientCreateConservaddr.sin_port = htons(8083); 
-  
-    // Binding newly created socket to given IP and verification 
-    if ((bind(ClientCreateConSockfd, (SA*)&ClientCreateConservaddr, sizeof(ClientCreateConservaddr))) != 0) { 
-        printf("socket bind failed for P2P client Server...\n"); 
-        pthread_exit(NULL);
-    } 
-    else
-        printf("Socket successfully binded for P2P client Server..\n"); 
-  
-    // Now server is ready to listen and verification 
-    if ((listen(ClientCreateConSockfd, 5)) != 0) { 
-        printf("Listen failed for P2P client Server...\n"); 
-        pthread_exit(NULL);
-    } 
-    else
-        printf("Server listening for P2P client Server..\n"); 
-    ClientCreateConlen = sizeof(ClientCreateConcli); 
-  
-    // Accept the data packet from client and verification 
-    ClientCreateConConnfd = accept(ClientCreateConSockfd, (SA*)&ClientCreateConcli, &ClientCreateConlen); 
-    if (ClientCreateConConnfd < 0) { 
-        printf("server acccept failed for P2P client Server...\n"); 
-        pthread_exit(NULL);
-    } 
-    else
-        printf("server acccept the client for P2P client Server...\n"); 
-  
-    // Function for chatting between client and server 
-    //func(ClientCreateConConnfd); 
-
-    char buff[MAX]; 
-    int n; 
-    // infinite loop for chat 
-    for (;;) { 
-        bzero(buff, MAX); 
-  
-        // read the message from client and copy it in buffer 
-        read(ClientCreateConConnfd, buff, sizeof(buff)); 
-        // print buffer which contains the client contents 
-        printf("From P2P client: %s\t To client : ", buff);
-
-        if ((strncmp(buff, "bingo_card", 7)) == 0) { 
-            printf("adding values to the card...\n");
-            sscanf(buff,"bingo_card %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ",&bingoCard[0],&bingoCard[1],&bingoCard[2],&bingoCard[3],&bingoCard[4],&bingoCard[5],&bingoCard[6],&bingoCard[7],&bingoCard[8],&bingoCard[9],&bingoCard[10],&bingoCard[11],&bingoCard[12],&bingoCard[13],&bingoCard[14],&bingoCard[15],&bingoCard[16],&bingoCard[17],&bingoCard[18],&bingoCard[19],&bingoCard[20],&bingoCard[21],&bingoCard[22],&bingoCard[23],&bingoCard[24]); 
-            for (int i = 0 ;i < 25; i++)
-            {
-                printf("%d\n",bingoCard[i] );
-            }
-            bzero(buff, sizeof(buff));
-            sprintf(buff,"get_number");
-            
-            
-        } 
-
-        else if ((strncmp(buff, "get_number", 10)) == 0) { 
-            
-            bzero(buff, sizeof(buff));
-            int upper = 100 ,lower = 1;
-            int num = (rand() % (upper - lower + 1)) + lower;
-            printf("Number requested,Sending number %d \n ",num);
-
-            sprintf(buff,"New_number_is %d",num);
-            //cardNumber++;
-            //if(cardNumber>24) exit(0);
-            
-            
-        }
-        else if  (strncmp(buff,"New_number_is",10)== 0)  
-        {
-            printf("Number received is %s\n",buff);
-            //TO DO to check here if i am winner create a function for this and return true or false
-            bzero(buff, sizeof(buff));
-            sprintf(buff,"I_am_winner ");
-            
-
-
-        }
-        else if (strncmp("close", buff, 4) == 0) 
-        { 
-            printf("All clients closing down since server closed down\n"); 
-            //break; 
-            exit(0); 
-        }
-       // bzero(buff, MAX); 
-        n = 0; 
-        // copy server message in the buffer 
-        //char deleteBuff[MAX];
-        while ((buff[n++] = getchar()) != '\n') ;
-             
-  
-        // and send that buffer to client 
-        write(ClientCreateConConnfd, buff, sizeof(buff)); 
-  
-        // if msg contains "Exit" then server exit and chat ended. 
-        if (strncmp("exit", buff, 4) == 0) { 
-            printf("Server Exit...\n"); 
-            break; 
-        } 
-    }
-  
-    // After chatting close the socket 
-    close(ClientCreateConSockfd); 
 }
 
-
+/*
+Below is the handler function so 
+that the current instance of client
+can interact with the server(manager)
+It will perform the operations such as registeration.
+Also, the function handles the commands which 
+the user enter and accordingly contacts server 
+for fetching data
 */
 
-void *deleteFunc(void)
-{
-    printf("deleteFunction is caller \n");
-}
-
 void ServerConnectionFunc (void)
-{
-    
-     
-    /*
-    // socket create and varification 
-    serverSockfd = socket(AF_INET, SOCK_STREAM, 0); 
-    if (serverSockfd == -1) { 
-        printf("socket creation failed for connecting to main Server...\n"); 
-        pthread_exit(NULL); 
-    } 
-    else
-        printf("Socket successfully created for connecting to main server..\n"); 
-    bzero(&servaddr, sizeof(servaddr)); 
-  
-    // assign IP, PORT 
-    servaddr.sin_family = AF_INET; 
-    servaddr.sin_addr.s_addr = inet_addr(Server_ip_addr); //TO DO change server ip address here to variable name
-    servaddr.sin_port = htons(ServerPORT); 
-  
-    // connect the client socket to server socket 
-    if (connect(serverSockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) { 
-        printf("connection with the MAIN server failed...\n"); 
-        pthread_exit(NULL); 
-    } 
-    else
-        printf("connected to the MAIN server..\n"); 
-  
-    // function for chat 
-    //func(serverSockfd); 
-
-    
-    bzero(buff, sizeof(buff)); 
-    sprintf(buff,"my_port=%d my_ipaddr=%s",MYPORT,my_ip_addr);
-
-    write(serverSockfd, buff, sizeof(buff)); 
-    sleep(2);
-    bzero(buff, sizeof(buff));
-    read(serverSockfd, buff, sizeof(buff));
-    bzero(buff, sizeof(buff));
-    sprintf(buff,"start_game count=2\n");
-    write(serverSockfd, buff, sizeof(buff)); 
-    */
+{    
+    printf("Please enter the Server Ip address for future connections\nPlease note the data wont be verified for error correction, hence enter the data correctly\n");
+    scanf("%s",&Server_ip_addr);
+    printf("Please enter the port number of the server\n");
+    scanf("%d",&ServerPORT);
+    printf("Please enter valid commands for the game for eg. register \n");
     int n; 
     char buff[MAX]; 
     char userinput[MAX];
     for (;;) 
     { 
-        
-        //sleep(3);
-        //printf("Enter the for MAIN string : "); 
         n = 0; 
         bzero(buff, sizeof(buff));
         while ((userinput[n++] = getchar()) != '\n') ;
+        /*
+        When the current instance of the client
+        tries to register with server below command 
+        will be executed
+        */
+
         if ((strncmp(userinput, "register", 7)) == 0) 
         { 
             char localname[10];
@@ -770,22 +513,10 @@ void ServerConnectionFunc (void)
                 strcpy(my_name,localname);
                 strcpy(my_ip_addr, localip_addr);
                 MYPORT = localport_number;
-
-                //printf("enter ipaddress of server\n");
-                //scanf("%s",&Server_ip_addr);
-                //printf("enter port number of server\n");
-        
-                //scanf("%d",&ServerPORT);
-                ServerPORT = 8080;
-                strcpy(Server_ip_addr,"127.0.0.1");
-
-                 //currently here
+                //ServerPORT = 8080;
+                //strcpy(Server_ip_addr,"127.0.0.1");
                 printf("Client registering with Server\n");
 
-                //int serverSockfd, serverConnfd; 
-                //struct sockaddr_in servaddr, cli; 
-              
-                // socket create and varification 
                 serverSockfd = socket(AF_INET, SOCK_STREAM, 0); 
                 if (serverSockfd == -1) { 
                     printf("socket creation failed for connecting to main Server...\n"); 
@@ -794,14 +525,11 @@ void ServerConnectionFunc (void)
                 else
                     printf("Socket successfully created for connecting to main server..\n"); 
 
-                bzero(&servaddr, sizeof(servaddr)); 
-              
-                // assign IP, PORT 
+                bzero(&servaddr, sizeof(servaddr));
                 servaddr.sin_family = AF_INET; 
-                servaddr.sin_addr.s_addr = inet_addr(Server_ip_addr); //TO DO change server ip address here to variable name
-                servaddr.sin_port = htons(ServerPORT); 
-              
-                // connect the client socket to server socket 
+                servaddr.sin_addr.s_addr = inet_addr(Server_ip_addr);
+                servaddr.sin_port = htons(ServerPORT);
+
                 if (connect(serverSockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) { 
                     printf("connection with the MAIN server failed...\n"); 
                     pthread_exit(NULL); 
@@ -820,6 +548,7 @@ void ServerConnectionFunc (void)
                 if ((strncmp(buff, "registered", 9)) == 0) 
                 { 
                     printf("Client successfully registered\n");
+                    isPlayerRegistered = 1;
                     pthread_t ClientCreateConTID;
                     pthread_create(&ClientCreateConTID,NULL, ClientCreateConnectFunc,NULL);  //currently here
                 }
@@ -833,8 +562,20 @@ void ServerConnectionFunc (void)
                 continue;
             
         }
-        else if ((strncmp(userinput, "query players", 12)) == 0)
+        /*
+        Below statements will be executed with
+        the client query for curret player list
+        the server in return will reply 
+        with the list of players
+        */
+
+        else if ((strncmp(userinput, "query players", 12)) == 0) 
         {
+                if(isPlayerRegistered ==0)
+                {
+                    printf("You have not registered yet, please register!\n");
+                    continue;
+                }
                 bzero(buff, sizeof(buff)); 
                 bzero(userinput,sizeof(userinput));
                 strcpy(buff,"query_players");
@@ -849,7 +590,6 @@ void ServerConnectionFunc (void)
                     sscanf(buff,"players=%d",&local_player_count);
 
                     printf("%d\n",local_player_count);
-                    //int portArray[number_players-1];
                     char portStr[] = "port=";
                     char *temp;
                     temp = malloc(sizeof(buff));
@@ -859,7 +599,6 @@ void ServerConnectionFunc (void)
                         int num;
                         char localip_addr[20];
                         char localname[10];
-                        ///printf("%s\n",temp);
                         sscanf(temp,"port=%d ip_addr=%s name=%s ",&num,&localip_addr,&localname);
                         printf("port number is %d , ipaddress is %s and name is %s\n",num,localip_addr,localname);
                         bzero(localname,sizeof(localname));
@@ -872,31 +611,114 @@ void ServerConnectionFunc (void)
 
                 }
                 else
-                    printf("querying players did not recive suitable data\n"); //currently here
-
+                    printf("querying players did not recive suitable data\n"); 
                 continue;
         }
+
+        /*
+        Simimlary when the cleint queries for current
+        on going games, the server replies with that information
+        */
+
         else if ((strncmp(userinput, "query games", 11)) == 0)
         {
+                if(isPlayerRegistered ==0)
+                {
+                    printf("You have not registered yet, please register!\n");
+                    continue;
+                }
                 bzero(buff, sizeof(buff)); 
                 bzero(userinput,sizeof(userinput));
                 strcpy(buff,"query_games");
 
                 write(serverSockfd, buff, sizeof(buff));
-                sleep(1);
+                sleep(3);
                 bzero(buff, sizeof(buff)); 
                 read(serverSockfd, buff, sizeof(buff));
-                if ((strncmp(buff, "game_id", 7)) == 0)
+                if ((strncmp(buff, "game_count", 9)) == 0)
                 {
 
-                    printf("%s\n",buff);
+                    //printf("%s\n",buff); //curently here
+                    int local_game_count;
+                    sscanf(buff,"game_count=%d ",&local_game_count);
+                    
+
+                    if(local_game_count == 0)
+                    {
+                        printf("Either currupt data recieved or number of games is 0\n");
+                        continue;
+
+                    }
+
+                    char *new_String;
+                    new_String = malloc(sizeof(buff));
+                    new_String = strstr(buff,"game_id=");
+                    //printf("%s\n",new_String);
+
+                    printf("********query games log*******\n");
+
+                    printf("game count = %d\n",local_game_count);
+                    for(int j= 0; j<local_game_count;j++)
+                    {
+                        //printf("in next\n");
+                        int local_game_id;
+                        char local_Caller_name[10];
+                        int number_players;
+
+
+                        
+                        sscanf(new_String,"game_id=%d caller_name=%s player_list:  player=%d",&local_game_id,&local_Caller_name,&number_players);
+                        printf("game_id=%d caller_name=%s number of player=%d \n",local_game_id,local_Caller_name,number_players);
+                        char portStr[] = "port=";
+                        char *temp;
+                        temp = strstr(new_String,portStr);
+                        for(int i =0;i<number_players;i++)
+                        {
+                            int num;
+                            char localip_addr[20];
+                            char player_name[10];
+                            //printf("%s\n",temp);
+                            sscanf(temp,"port=%d ip_addr=%s name=%s",&num,&localip_addr,&player_name);
+                            printf("port number is %d ,ipaddress is %s and name is %s \n",num,localip_addr,player_name);
+                            temp++;
+                            temp = strstr(temp,portStr);
+
+                        }
+                        //printf("going for next with string %s\n",temp);
+                        if((j+1)<local_game_count)
+                        {
+                            //printf("in if condition\n");
+                            new_String++;
+                            new_String = strstr(new_String,"game_id=");
+                            //printf("new string '%s'\n",new_String);
+                        }
+                    }
                 }
                 else
                     printf("Either currupt data recieved or number of games is 0\n");
                 continue;
         }
+
+        /*
+        below statements will be executed when a client tries to 
+        deregister, the current instance of the client will leave
+        Note, a client can only deregister itself and
+        no one else
+        */
+
+
         else if ((strncmp(userinput, "deregister", 9)) == 0)
         {
+                if(isPlayerRegistered ==0)
+                {
+                    printf("You have not registered yet, please register!\n");
+                    continue;
+                }
+                if(isSelfCaller == 1)
+                {
+                    printf("this client instance cannot leave the game\n");
+                    continue;
+                }
                 bzero(userinput,sizeof(userinput));
                 char localname[10];
                 sscanf(userinput,"deregister %s",&localname);
@@ -920,8 +742,25 @@ void ServerConnectionFunc (void)
                 }
 
         }
+
+        /*
+        Below statements will be executed when a client
+        tries to initiate a game. It ask the server for current player list
+        if the there are sufficient players in the system, 
+        then the server will send a list of available players
+        This instance of client will now create thread for
+        individual players . Those threads will then play 
+        the game with the other players on the other end
+        */
+
         else if ((strncmp(userinput, "start game", 9)) == 0)
         {
+            if(isPlayerRegistered ==0)
+                {
+                    printf("You have not registered yet, please register!\n");
+                    continue;
+                }
+            
             int local_player_count;
             sscanf(userinput,"start game %d",&local_player_count);
             bzero(userinput,sizeof(userinput));
@@ -931,16 +770,13 @@ void ServerConnectionFunc (void)
             sleep(3);
             bzero(buff, sizeof(buff));
             read(serverSockfd, buff, sizeof(buff));
-            if (strncmp("connect", buff, 6) == 0) // TO DO receive port number from server here for client as a client which initiates a new game
+            if (strncmp("connect", buff, 6) == 0)
             { 
-                    printf("sending connect command\n");
-
+                    //printf("sending connect command\n");
+                    isSelfCaller = 1;
                     int number_players;
-            
-
                     sscanf(buff,"connect game_id=%d player=%d",&current_game_id,&number_players);
-                    printf("%d\n",number_players);
-                    //int portArray[number_players-1];
+                    //printf("%d\n",number_players);
                     char portStr[] = "port=";
                     char *temp;
                     temp = strstr(buff,portStr);
@@ -948,7 +784,7 @@ void ServerConnectionFunc (void)
                     {
                         int num;
                         char localip_addr[6];
-                        printf("%s\n",temp);
+                        //printf("%s\n",temp);
                         sscanf(temp,"port=%d ip_addr=%s",&num,&localip_addr);
                         printf("port number to be connected is %d and ipaddress is %s \n",num,localip_addr);
                         accepterThreadStruct[accepterCount] = malloc(sizeof(struct ClientStruct));
@@ -956,6 +792,7 @@ void ServerConnectionFunc (void)
                         accepterThreadStruct[accepterCount]->game_id = current_game_id;
                         sprintf(accepterThreadStruct[accepterCount]->ip_addr,"%s",localip_addr);
                         pthread_create(&accepterThreadStruct[accepterCount]->tid,NULL,ClientAcceptConFunc,accepterThreadStruct[accepterCount]);
+                        //printf("created accepter thread %d\n",accepterCount);
                         accepterCount++;
                         temp++;
                         temp = strstr(temp,portStr);
@@ -975,74 +812,11 @@ void ServerConnectionFunc (void)
         }
         else
         {
-            printf("invalid command\n");
+            printf("invalid command entered, please enter a valid command\n");
             continue;
         }
-            
-        //write(serverSockfd, buff, sizeof(buff)); 
-        if ((strncmp(buff, "exit", 4)) == 0) { 
-            printf("MAIN Client self Exit...\n"); 
-            break; }
-
-        bzero(buff, sizeof(buff)); 
-        read(serverSockfd, buff, sizeof(buff)); 
-        
-        //printf("From MAIN Server : %s", buff);   // TO DO this will go on in infinite loop
-
-        if ((strncmp(buff, "exit", 4)) == 0) { 
-            printf("MAIN Client Exit since server left...\n"); 
-            break; 
-        }
-
-        else if (strncmp("connect", buff, 6) == 0) // TO DO receive port number from server here for client as a client which initiates a new game
-        { 
-            printf("seding connect command\n");
-
-            int number_players;
-    
-
-            sscanf(buff,"connect player=%d",&number_players);
-            printf("%d\n",number_players);
-            //int portArray[number_players-1];
-            char portStr[] = "port=";
-            char *temp;
-            temp = strstr(buff,portStr);
-            for(int i =0;i<number_players;i++)
-            {
-                int num;
-                char localip_addr[20];
-                char localname[10];
-                printf("%s\n",temp);
-                sscanf(temp,"port=%d ip_addr=%s name=%s",&num,&localip_addr,&localname);
-                printf("port number to be connected is %d and ipaddress is %s \n",num,localip_addr);
-                accepterThreadStruct[accepterCount] = malloc(sizeof(struct ClientStruct));
-                accepterThreadStruct[accepterCount]->port = num;
-                strcpy(accepterThreadStruct[accepterCount]->ip_addr,localip_addr);
-                strcpy(accepterThreadStruct[accepterCount]->client_name,localname);
-                sprintf(accepterThreadStruct[accepterCount]->ip_addr,"%s",localip_addr);
-                pthread_create(&accepterThreadStruct[accepterCount]->tid,NULL,ClientAcceptConFunc,accepterThreadStruct[accepterCount]);
-                accepterCount++;
-                temp++;
-                temp = strstr(temp,portStr);
-
-            }
-            
-             
-        }
-        /*
-        else if (strncmp("create", buff, 4) == 0) 
-        { 
-            printf("seding connect command\n");
-            pthread_t ClientCreateConTID;
-
-            pthread_create(&ClientCreateConTID,NULL,ClientCreateConnectFunc,NULL); 
-            //break; 
-         }  
-         */  
-        
     } 
-    pthread_exit(NULL);
-    // close the socket 
+    pthread_exit(NULL); 
     close(serverSockfd);
 }
 
@@ -1050,64 +824,11 @@ void ServerConnectionFunc (void)
 
 int main(int argc, char *argv[] ) 
 { 
+
     
-    /*
-        printf("enter ipaddress of this machine\n");
-        scanf("%s",&my_ip_addr);
-        printf("enter port number of this machine\n");
-        scanf("%d",&MYPORT);
-        printf("enter ipaddress of server\n");
-        scanf("%s",&Server_ip_addr);
-        printf("enter port number of server\n");
-        
-        scanf("%d",&ServerPORT);
-    */
     pthread_t ServerConnectionTID;
     pthread_attr_t ServerCattr;
-    //pthread_t ClientCreateConTID;
-    //pthread_create(&ClientCreateConTID,NULL, ClientCreateConnectFunc,NULL);
-
     pthread_create(&ServerConnectionTID,NULL,ServerConnectionFunc,NULL);
-
-    
-
-    //pthread_t CLientAcceptConTID;
-
-    //pthread_create(&CLientAcceptConTID,NULL,ClientAcceptConFunc,NULL);
-
     pthread_exit(NULL);
 
-/*
-    int sockfd, connfd; 
-    struct sockaddr_in servaddr, cli; 
-  
-    // socket create and varification 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0); 
-    if (sockfd == -1) { 
-        printf("socket creation failed...\n"); 
-        exit(0); 
-    } 
-    else
-        printf("Socket successfully created..\n"); 
-    bzero(&servaddr, sizeof(servaddr)); 
-  
-    // assign IP, PORT 
-    servaddr.sin_family = AF_INET; 
-    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
-    servaddr.sin_port = htons(ServerPORT); 
-  
-    // connect the client socket to server socket 
-    if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) { 
-        printf("connection with the server failed...\n"); 
-        exit(0); 
-    } 
-    else
-        printf("connected to the server..\n"); 
-  
-    // function for chat 
-    func(sockfd); 
-  
-    // close the socket 
-    close(sockfd); 
-    */
 } 
