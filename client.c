@@ -11,6 +11,7 @@
 #define MAX 500 
 #define SA struct sockaddr
 
+
 int ServerPORT ;
 int Server_ip_addr[20];
 

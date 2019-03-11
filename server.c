@@ -12,6 +12,7 @@
 
 #define SA struct sockaddr 
 
+
 int MYPORT ;
 char my_ip_addr[20];
 
